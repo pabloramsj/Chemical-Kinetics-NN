@@ -220,7 +220,7 @@ def train_stage(stage_name, train_bs, lr, epochs,
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     scaler = torch.cuda.amp.GradScaler(enabled=(device.type=="cuda"))
 
-    accum_steps = max(1, train_bs // physical_bs)
+    accum_steps = max(1, math.ceil(train_bs / physical_bs))
 
     # Reanudar si procede
     start_epoch = 1
@@ -249,13 +249,20 @@ def train_stage(stage_name, train_bs, lr, epochs,
         train_loss_sum, train_samples = 0.0, 0
         pbar = tqdm(train_loader, desc=f"{stage_name} | epoch {epoch}/{epochs} | lr={lr:g} | bs={train_bs}", leave=False)
         
+        num_batches = len(train_loader)
+
         for i, (xb, yb) in enumerate(pbar, start=1):
             xb, yb = xb.to(device), yb.to(device)
-        
+
+            current_micro = steps_since_update + 1
+            effective_accum = accum_steps
+            if i == num_batches and current_micro < accum_steps:
+                effective_accum = current_micro
+
             with torch.cuda.amp.autocast(enabled=(device.type=="cuda")):
                 pred = model(xb)
                 batch_loss = criterion(pred, yb)
-                loss = batch_loss / accum_steps
+                loss = batch_loss / effective_accum
         
             scaler.scale(loss).backward()
             steps_since_update += 1
@@ -361,5 +368,5 @@ torch.save(model.state_dict(), "mlp_rde_two_stage.pt")
 print("Modelo guardado en 'mlp_rde_two_stage.pt'")
 
 end = time.time()     # Marca final
-
 print(f"Tiempo de ejecución: {end - start:.3f} segundos")
+
