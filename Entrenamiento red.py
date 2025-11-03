@@ -296,7 +296,7 @@ def train_stage(stage_name, train_bs, lr, epochs,
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
             # checkpoint inmediato del mejor
             if ckpt_path:
-                save_ckpt(ckpt_path, model, optimizer, scaler, epoch, best_val,
+                save_ckpt(ckpt_path, epoch, model, optimizer, scaler, best_val,
                           stage_meta={"stage": stage_name, "lr": lr,
                                      "train_bs": train_bs, "physical_bs": physical_bs})
 
