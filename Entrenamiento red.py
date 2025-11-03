@@ -220,13 +220,16 @@ def train_stage(stage_name, train_bs, lr, epochs,
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     scaler = torch.cuda.amp.GradScaler(enabled=(device.type=="cuda"))
 
-    accum_steps = max(1, train_bs // physical_bs)
+    accum_steps = max(1, math.ceil(train_bs / physical_bs))
 
     # Reanudar si procede
     start_epoch = 1
     best_val = float("inf")
     if ckpt_path and resume:
         start_epoch, best_val, _ = load_ckpt_if_exists(ckpt_path, model, optimizer, scaler)
+
+    # Mantener una copia del mejor estado incluso si no hay mejoras nuevas
+    best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
     # Buffers de curvas
     train_curve, val_curve = [], []
@@ -246,13 +249,20 @@ def train_stage(stage_name, train_bs, lr, epochs,
         train_loss_sum, train_samples = 0.0, 0
         pbar = tqdm(train_loader, desc=f"{stage_name} | epoch {epoch}/{epochs} | lr={lr:g} | bs={train_bs}", leave=False)
         
+        num_batches = len(train_loader)
+
         for i, (xb, yb) in enumerate(pbar, start=1):
             xb, yb = xb.to(device), yb.to(device)
-        
+
+            current_micro = steps_since_update + 1
+            effective_accum = accum_steps
+            if i == num_batches and current_micro < accum_steps:
+                effective_accum = current_micro
+
             with torch.cuda.amp.autocast(enabled=(device.type=="cuda")):
                 pred = model(xb)
                 batch_loss = criterion(pred, yb)
-                loss = batch_loss / accum_steps
+                loss = batch_loss / effective_accum
         
             scaler.scale(loss).backward()
             steps_since_update += 1
@@ -296,7 +306,7 @@ def train_stage(stage_name, train_bs, lr, epochs,
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
             # checkpoint inmediato del mejor
             if ckpt_path:
-                save_ckpt(ckpt_path, model, optimizer, scaler, epoch, best_val,
+                save_ckpt(ckpt_path, epoch, model, optimizer, scaler, best_val,
                           stage_meta={"stage": stage_name, "lr": lr,
                                      "train_bs": train_bs, "physical_bs": physical_bs})
 
@@ -359,3 +369,4 @@ print("Modelo guardado en 'mlp_rde_two_stage.pt'")
 
 end = time.time()     # Marca final
 print(f"Tiempo de ejecución: {end - start:.3f} segundos")
+
