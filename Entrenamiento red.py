@@ -361,4 +361,5 @@ torch.save(model.state_dict(), "mlp_rde_two_stage.pt")
 print("Modelo guardado en 'mlp_rde_two_stage.pt'")
 
 end = time.time()     # Marca final
+
 print(f"Tiempo de ejecución: {end - start:.3f} segundos")
